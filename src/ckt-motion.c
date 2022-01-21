@@ -20,27 +20,46 @@ LICENSE:
 
 *************************************************************************/
 
+/* 
+ * Directions:
+ * 
+ *     ---------  ^ NEGATIVE
+ *     |   *   |  |
+ *     |-------|  |
+ *     ||     ||  dy
+ *     ||     ||  |
+ *     |-------|  |
+ *     ---------  v POSITIVE
+ *     <-- dx -->
+ *     NEG    POS
+ */
+
+
+#include <stdbool.h>
 #include <stdlib.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/wdt.h>
 #include <util/delay.h>
 
-#define   PAT9125_ADDR           0x73
-#define   INFO_ADDR              0x20
+#define PAT9125_ADDR           0x73
+#define INFO_ADDR              0x20
 
-#define   SENSOR_ERROR_THRESHOLD    0
-#define   ON_DEBOUNCE_DEFAULT       1
+#define SENSOR_ERROR_THRESHOLD    0
+#define RIGHT_MOTION_THRESHOLD  10
+#define LEFT_MOTION_THRESHOLD  -10
 
-#define   SDA   PB0
-#define   SCL   PB2
+#define ON_DEBOUNCE_COUNT      2
+#define OFF_DEBOUNCE_COUNT     4
 
-static inline void sda_low() { DDRB |= _BV(SDA); PORTB &= ~_BV(SDA); _delay_us(10); }
-static inline void sda_high() { DDRB &= ~_BV(SDA); PORTB |= _BV(SDA); _delay_us(10); }
-static inline void scl_low() { PORTB &= ~_BV(SCL); _delay_us(10); }
-static inline void scl_high() { PORTB |= _BV(SCL); _delay_us(10); }
+#define SDA   PB0
+#define SCL   PB2
 
-volatile uint8_t ticks;
+static inline void sda_low() { DDRB |= _BV(SDA); PORTB &= ~_BV(SDA); _delay_us(3); }
+static inline void sda_high() { DDRB &= ~_BV(SDA); PORTB |= _BV(SDA); _delay_us(3); }
+static inline void scl_low() { PORTB &= ~_BV(SCL); _delay_us(3); }
+static inline void scl_high() { PORTB |= _BV(SCL); _delay_us(3); }
+
 volatile uint8_t decisecs = 0;
 
 void initialize100HzTimer(void)
@@ -48,7 +67,6 @@ void initialize100HzTimer(void)
 	// Set up timer 0 for 100Hz interrupts
 	TCNT0 = 0;
 	OCR0A = 94;  // 9.6MHz / 1024 / 94 = 100Hz
-	ticks = 0;
 	decisecs = 0;
 	TCCR0A = _BV(WGM01);
 	TCCR0B = _BV(CS02) | _BV(CS00);  // 1024 prescaler
@@ -57,6 +75,7 @@ void initialize100HzTimer(void)
 
 ISR(TIM0_COMPA_vect)
 {
+	static uint8_t ticks = 0;
 	if (++ticks >= 10)
 	{
 		ticks = 0;
@@ -186,6 +205,13 @@ void init(void)
 	DDRB |= _BV(PB1) | _BV(SCL) | _BV(PB3);
 }
 
+bool PAT9125_test()
+{
+	if (0x31 == PAT9125_RegRead(0x00))
+		return true;
+	return false;
+}
+
 uint8_t PAT9125_init()
 {
 	uint8_t sensor_pid=0, read_id_ok=0;
@@ -226,10 +252,16 @@ uint8_t PAT9125_init()
 	return read_id_ok;
 }
 
-void PAT9125_ReadMotion(int16_t *dx, int16_t *dy)
+bool PAT9125_ReadMotion(int16_t *dx, int16_t *dy)
 {
 	int16_t deltaX_l=0, deltaY_l=0, deltaXY_h=0;
 	int16_t deltaX_h=0, deltaY_h=0;
+
+	*dx = 0;
+	*dy = 0;
+
+	if (!PAT9125_test())
+		return false;
 
 	if( PAT9125_RegRead(0x02) & 0x80 ) //check motion bit in bit7
 	{
@@ -249,9 +281,10 @@ void PAT9125_ReadMotion(int16_t *dx, int16_t *dy)
 	//inverse X and/or Y if necessary
 	*dx = -(deltaX_h | deltaX_l);
 	*dy = -(deltaY_h | deltaY_l);
+	return true;
 }
 
-void setOutputs(uint8_t detect)
+void setOutputs(bool detect)
 {
 	if(detect)
 	{
@@ -265,15 +298,50 @@ void setOutputs(uint8_t detect)
 	}
 }
 
+void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t onDebounceCount, const uint8_t offDebounceCount)
+{
+	if(!(*detect) && isDetecting)
+	{
+		// ON debounce
+		(*count)++;
+		if(*count > onDebounceCount)
+		{
+			*detect = true;
+			*count = 0;
+		}
+	}
+	else if(!(*detect) && !isDetecting)
+	{
+		*count = 0;
+	}
+
+	else if(*detect & !isDetecting)
+	{
+		// OFF debounce
+		(*count)++;
+		if(*count > offDebounceCount)
+		{
+			*detect = false;
+			*count = 0;
+		}
+	}
+	else if(*detect & isDetecting)
+	{
+		*count = 0;
+	}
+}
+
+
 int main(void)
 {
-	uint8_t detect = 0, sensorError = 0;
-	uint16_t count = 0;  // 256 decisecs * 60 (long delay mode) = 15360 max count
+	uint8_t sensorError = 0;
 	int16_t adc, adc_filt = 0;
-	uint8_t ack = 0;
+	bool ack = false;
 	int16_t dx=0, dy=0;
-	int16_t on_debounce, off_debounce;  // Signed so the math for off_debounce doesn't wrap
-	
+
+	bool leftDetect = false, rightDetect = false;
+	uint8_t leftCount = 0, rightCount = 0;
+
 	// Application initialization
 	init();
 	initialize100HzTimer();
@@ -289,23 +357,16 @@ int main(void)
 		{
 			decisecs = 0;
 
-			// Read ADC
+/*			// Read ADC
 			ADCSRA |= _BV(ADSC);  // Trigger conversion
 			while(ADCSRA & _BV(ADSC));
 			adc = ADC;
 			adc_filt = adc_filt + ((adc - adc_filt) / 4);
-
-			on_debounce = ON_DEBOUNCE_DEFAULT;
-			off_debounce = (adc_filt > 512) ? 1 : RELEASE_DECISECS;
-
+*/
 			if (sensorError)
-			{
 				PAT9125_init();
-			}	
 
-
-			PAT9125_ReadMotion(&dx, &dy);
-			ack = 1;
+			ack = PAT9125_ReadMotion(&dx, &dy);
 			if (!ack)
 			{
 				// Sensor's gone wonky, reset it and try again
@@ -314,9 +375,9 @@ int main(void)
 
 				if (sensorError > SENSOR_ERROR_THRESHOLD)
 				{
-					detect = 0;
-					count = 0;
-					setOutputs(detect);
+					leftDetect = rightDetect = false;
+					leftCount = rightCount = 0;
+					setOutputs(false);
 				}
 
 				continue;
@@ -325,28 +386,16 @@ int main(void)
 				sensorError = 0;
 			}
 
-#define RIGHT_MOTION_THRESHOLD  10
-#define LEFT_MOTION_THRESHOLD  -10
+			hysteresis(&leftDetect, &leftCount, dy < LEFT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
+			hysteresis(&rightDetect, &rightCount, dy > RIGHT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
 
-			if (dx >= RIGHT_MOTION_THRESHOLD)
-			{
-				PORTB |= _BV(PB3);
-				PORTB &= ~_BV(PB1);
-			}
-			else if (dx <= LEFT_MOTION_THRESHOLD)
-			{
-				PORTB |= _BV(PB1);
-				PORTB &= ~_BV(PB3);
-			} else {
-				PORTB &= ~(_BV(PB1) | _BV(PB3));
-			}
+			if (leftDetect)
+				setOutputs(true);
+			else
+				setOutputs(false);
 		}
 
-/*		i2cStart();
-		detect = i2cWriteByte(PAT9125_ADDR << 1);
-		i2cStop();
 
-		setOutputs(detect);*/
 	}
 }
 
