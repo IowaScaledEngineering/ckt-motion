@@ -50,7 +50,7 @@ LICENSE:
 #define LEFT_MOTION_THRESHOLD  -10
 
 #define ON_DEBOUNCE_COUNT      2
-#define OFF_DEBOUNCE_COUNT     4
+#define OFF_DEBOUNCE_COUNT     RELEASE_DECISECS
 
 #define SDA   PB0
 #define SCL   PB2
@@ -335,7 +335,7 @@ void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t on
 int main(void)
 {
 	uint8_t sensorError = 0;
-	int16_t adc, adc_filt = 0;
+//	int16_t adc, adc_filt = 0;
 	bool ack = false;
 	int16_t dx=0, dy=0;
 
@@ -389,13 +389,34 @@ int main(void)
 			hysteresis(&leftDetect, &leftCount, dy < LEFT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
 			hysteresis(&rightDetect, &rightCount, dy > RIGHT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
 
+#if defined MODE_LEFT_MOTION_ONLY
 			if (leftDetect)
 				setOutputs(true);
 			else
 				setOutputs(false);
+#elif defined MODE_RIGHT_MOTION_ONLY
+			if (rightDetect)
+				setOutputs(true);
+			else
+				setOutputs(false);
+#elif defined MODE_DIRECTION_MOTION
+			if (rightDetect)
+				PORTB |= _BV(PB3);
+			else
+				PORTB &= ~_BV(PB3);
+
+			if (leftDetect)
+				PORTB |= _BV(PB1);
+			else
+				PORTB &= ~_BV(PB1);
+#else
+			if (rightDetect || leftDetect)
+				setOutputs(true);
+			else
+				setOutputs(false);
+#endif
+
 		}
-
-
 	}
 }
 

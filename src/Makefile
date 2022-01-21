@@ -36,7 +36,15 @@ FUSE_H  = 0xFB
 #BOARD  = -DTWOPIECE
 #OPTS   = -DLONG_DELAY
 
-RELEASE_DECISECS = 50
+
+# Options for outputs
+
+#OUTPUT_MODE = -DMODE_LEFT_MOTION_ONLY    # Only detects on left motion
+#OUTPUT_MODE = -DMODE_RIGHT_MOTION_ONLY   # Only detects on right motion
+#OUTPUT_MODE = -DMODE_DIRECTION_MOTION    # Outputs left and right on separate lines
+OUTPUT_MODE = -DMODE_ANY_MOTION
+
+RELEASE_DECISECS = 20
 
 SRCS = $(BASE_NAME).c
 INCS = 
