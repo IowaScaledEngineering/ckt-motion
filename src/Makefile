@@ -32,11 +32,6 @@ F_CPU   = 9600000
 FUSE_L  = 0x1A
 FUSE_H  = 0xFB
 
-#SENSOR = -DTMD26711
-#BOARD  = -DTWOPIECE
-#OPTS   = -DLONG_DELAY
-
-
 # Options for outputs
 
 #OUTPUT_MODE = -DMODE_LEFT_MOTION_ONLY    # Only detects on left motion
@@ -44,12 +39,13 @@ FUSE_H  = 0xFB
 #OUTPUT_MODE = -DMODE_DIRECTION_MOTION    # Outputs left and right on separate lines
 OUTPUT_MODE = -DMODE_ANY_MOTION
 
-RELEASE_DECISECS = 20
+SET_DECISECS = 10
+RELEASE_DECISECS = 1
 
 SRCS = $(BASE_NAME).c
 INCS = 
 
-AVRDUDE = avrdude -c iseavrprog -P usb -p $(DEVICE) -B32
+AVRDUDE = avrdude -c iseavrprog -P usb -p $(DEVICE) -B8
 AVRDUDE_SLOW = avrdude -c iseavrprog -P usb -p $(DEVICE) -B32
 
 OBJS = ${SRCS:.c=.o}
@@ -57,7 +53,7 @@ INCLUDES = -I.
 CFLAGS  = $(INCLUDES) -Wall -Os -std=gnu99 -ffunction-sections -fdata-sections
 LDFLAGS = -Wl,-gc-sections
 
-COMPILE = avr-gcc $(DEFINES) -DF_CPU=$(F_CPU) $(OPTS) $(SENSOR) $(BOARD) -DRELEASE_DECISECS=$(RELEASE_DECISECS) $(CFLAGS) $(LDFLAGS) -mmcu=$(DEVICE)
+COMPILE = avr-gcc $(DEFINES) -DF_CPU=$(F_CPU) $(OPTS) $(SENSOR) $(BOARD) -DSET_DECISECS=$(SET_DECISECS) -DRELEASE_DECISECS=$(RELEASE_DECISECS) $(CFLAGS) $(LDFLAGS) -mmcu=$(DEVICE)
 
 # -E -dM options preprocess only and output results of #define
 #COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE) -E -dM

@@ -46,10 +46,10 @@ LICENSE:
 #define INFO_ADDR              0x20
 
 #define SENSOR_ERROR_THRESHOLD    0
-#define RIGHT_MOTION_THRESHOLD  10
-#define LEFT_MOTION_THRESHOLD  -10
+#define RIGHT_MOTION_THRESHOLD  75
+#define LEFT_MOTION_THRESHOLD  -75
 
-#define ON_DEBOUNCE_COUNT      2
+#define ON_DEBOUNCE_COUNT      SET_DECISECS
 #define OFF_DEBOUNCE_COUNT     RELEASE_DECISECS
 
 #define SDA   PB0
@@ -312,7 +312,9 @@ void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t on
 	}
 	else if(!(*detect) && !isDetecting)
 	{
-		*count = 0;
+		if (*count > 0)
+			count--;
+//		*count = 0;
 	}
 
 	else if(*detect & !isDetecting)
@@ -327,7 +329,10 @@ void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t on
 	}
 	else if(*detect & isDetecting)
 	{
-		*count = 0;
+		if (*count > 0)
+			count--;
+
+//		*count = 0;
 	}
 }
 
