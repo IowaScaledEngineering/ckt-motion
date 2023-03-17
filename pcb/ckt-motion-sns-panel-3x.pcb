@@ -2966,6 +2966,14 @@ Layer(1 "top" "copper")
 	Line[4345.00mil 1010.00mil 4315.00mil 1010.00mil 20.00mil 20.00mil "clearline"]
 	Line[110.7250mm 995.75mil 4345.00mil 1010.00mil 20.00mil 20.00mil "clearline"]
 	Line[110.7250mm 24.6200mm 110.7250mm 995.75mil 20.00mil 20.00mil "clearline"]
+	Polygon("clearpoly")
+	(
+		[120.00mil 1030.00mil] [280.00mil 1030.00mil] [280.00mil 120.00mil] [120.00mil 120.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[4620.00mil 1030.00mil] [4780.00mil 1030.00mil] [4780.00mil 120.00mil] [4620.00mil 120.00mil] 
+	)
 )
 Layer(2 "bottom" "copper")
 (
