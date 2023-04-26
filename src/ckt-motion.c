@@ -46,8 +46,8 @@ LICENSE:
 #define INFO_ADDR              0x20
 
 #define SENSOR_ERROR_THRESHOLD    0
-#define RIGHT_MOTION_THRESHOLD  75
-#define LEFT_MOTION_THRESHOLD  -75
+#define RIGHT_MOTION_THRESHOLD  MOTION_THRESHOLD
+#define LEFT_MOTION_THRESHOLD  -MOTION_THRESHOLD
 
 #define ON_DEBOUNCE_COUNT      SET_DECISECS
 #define OFF_DEBOUNCE_COUNT     RELEASE_DECISECS
@@ -207,6 +207,7 @@ void init(void)
 
 bool PAT9125_test()
 {
+	// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
 	if (0x31 == PAT9125_RegRead(0x00))
 		return true;
 	return false;
@@ -214,11 +215,9 @@ bool PAT9125_test()
 
 uint8_t PAT9125_init()
 {
-	uint8_t sensor_pid=0, read_id_ok=0;
-	// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
-	sensor_pid = PAT9125_RegRead(0x00);
+	uint8_t read_id_ok=0;
 
-	if(sensor_pid == 0x31)
+	if(PAT9125_test())
 	{
 		read_id_ok =1;
 		//PAT9125 sensor recommended settings:

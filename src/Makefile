@@ -39,8 +39,9 @@ FUSE_H  = 0xFB
 #OUTPUT_MODE = -DMODE_DIRECTION_MOTION    # Outputs left and right on separate lines
 OUTPUT_MODE = -DMODE_ANY_MOTION
 
-SET_DECISECS = 10
-RELEASE_DECISECS = 1
+SET_DECISECS = 5
+RELEASE_DECISECS = 2
+MOTION_THRESHOLD = 50
 
 SRCS = $(BASE_NAME).c
 INCS = 
@@ -53,7 +54,7 @@ INCLUDES = -I.
 CFLAGS  = $(INCLUDES) -Wall -Os -std=gnu99 -ffunction-sections -fdata-sections
 LDFLAGS = -Wl,-gc-sections
 
-COMPILE = avr-gcc $(DEFINES) -DF_CPU=$(F_CPU) $(OPTS) $(SENSOR) $(BOARD) -DSET_DECISECS=$(SET_DECISECS) -DRELEASE_DECISECS=$(RELEASE_DECISECS) $(CFLAGS) $(LDFLAGS) -mmcu=$(DEVICE)
+COMPILE = avr-gcc $(DEFINES) -DF_CPU=$(F_CPU) $(OPTS) $(SENSOR) $(BOARD) -DSET_DECISECS=$(SET_DECISECS) -DRELEASE_DECISECS=$(RELEASE_DECISECS) -DMOTION_THRESHOLD=$(MOTION_THRESHOLD) $(CFLAGS) $(LDFLAGS) -mmcu=$(DEVICE)
 
 # -E -dM options preprocess only and output results of #define
 #COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE) -E -dM
