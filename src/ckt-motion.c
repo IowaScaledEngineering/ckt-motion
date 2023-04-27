@@ -45,7 +45,6 @@ LICENSE:
 #define PAT9125_ADDR           0x73
 #define INFO_ADDR              0x20
 
-#define SENSOR_ERROR_THRESHOLD    0
 #define RIGHT_MOTION_THRESHOLD  MOTION_THRESHOLD
 #define LEFT_MOTION_THRESHOLD  -MOTION_THRESHOLD
 
@@ -196,11 +195,6 @@ void init(void)
 	wdt_enable(WDTO_250MS);
 	wdt_reset();
 
-	// Configure ADC
-	ADMUX = 0x02;  // ref = VCC, right-justified, input = PB4 (ADC2)
-	ADCSRA = 0x87; // ADC enabled, prescaler = 128
-	DIDR0 = _BV(ADC2D);  // Disable ADC2 digital input buffer
-	
 	PORTB = _BV(SCL) | _BV(PB1);  // All outputs low except SCL and PB1
 	DDRB |= _BV(PB1) | _BV(SCL) | _BV(PB3);
 }
@@ -338,9 +332,6 @@ void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t on
 
 int main(void)
 {
-	uint8_t sensorError = 0;
-//	int16_t adc, adc_filt = 0;
-	bool ack = false;
 	int16_t dx=0, dy=0;
 
 	bool leftDetect = false, rightDetect = false;
@@ -361,37 +352,30 @@ int main(void)
 		{
 			decisecs = 0;
 
-/*			// Read ADC
-			ADCSRA |= _BV(ADSC);  // Trigger conversion
-			while(ADCSRA & _BV(ADSC));
-			adc = ADC;
-			adc_filt = adc_filt + ((adc - adc_filt) / 4);
-*/
-			if (sensorError)
-				PAT9125_init();
-
-			ack = PAT9125_ReadMotion(&dx, &dy);
-			if (!ack)
+			if (!PAT9125_ReadMotion(&dx, &dy))
 			{
-				// Sensor's gone wonky, reset it and try again
-				if (sensorError < 255)
-					sensorError++;
-
-				if (sensorError > SENSOR_ERROR_THRESHOLD)
-				{
-					leftDetect = rightDetect = false;
-					leftCount = rightCount = 0;
-					setOutputs(false);
-				}
-
+				leftDetect = rightDetect = false;
+				leftCount = rightCount = 0;
+				setOutputs(false);
+				PAT9125_init();
 				continue;
-
-			} else {
-				sensorError = 0;
 			}
 
-			hysteresis(&leftDetect, &leftCount, dy < LEFT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
-			hysteresis(&rightDetect, &rightCount, dy > RIGHT_MOTION_THRESHOLD, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
+			uint8_t leftMotion = 0;
+			uint8_t rightMotion = 0;
+			
+			if(!leftDetect)
+				leftMotion = dy < LEFT_MOTION_THRESHOLD;
+			else
+				leftMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
+			
+			if(!rightDetect)
+				rightMotion = dy > RIGHT_MOTION_THRESHOLD;
+			else
+				rightMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
+
+			hysteresis(&leftDetect, &leftCount, leftMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
+			hysteresis(&rightDetect, &rightCount, rightMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
 
 #if defined MODE_LEFT_MOTION_ONLY
 			if (leftDetect)
