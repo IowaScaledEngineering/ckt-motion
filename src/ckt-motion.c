@@ -45,9 +45,6 @@ LICENSE:
 #define PAT9125_ADDR           0x73
 #define INFO_ADDR              0x20
 
-#define RIGHT_MOTION_THRESHOLD  MOTION_THRESHOLD
-#define LEFT_MOTION_THRESHOLD  -MOTION_THRESHOLD
-
 #define LOOP_MILLISECS         50
 
 #define ON_DEBOUNCE_COUNT      (SET_MILLISECS / LOOP_MILLISECS)
@@ -58,6 +55,7 @@ LICENSE:
 
 #define OUTPUT_WHITE_PULLDOWN   PB3
 #define OUTPUT_BLUE_PULLDOWN    PB1
+#define JUMPER                  PB4
 
 static inline void sda_low() { DDRB |= _BV(SDA); PORTB &= ~_BV(SDA); _delay_us(3); }
 static inline void sda_high() { DDRB &= ~_BV(SDA); PORTB |= _BV(SDA); _delay_us(3); }
@@ -218,6 +216,29 @@ void debounce(bool *detect, uint8_t* count, bool isDetecting, const uint8_t onDe
 	}
 }
 
+uint8_t getMotionThreshold(void)
+{
+	if(PINB & _BV(JUMPER))
+	{
+		return MOTION_THRESHOLD_A;
+	}
+	else
+	{
+		return MOTION_THRESHOLD_B;
+	}
+}
+
+uint8_t getNoMotionThreshold(void)
+{
+	if(PINB & _BV(JUMPER))
+	{
+		return NO_MOTION_THRESHOLD_A;
+	}
+	else
+	{
+		return NO_MOTION_THRESHOLD_B;
+	}
+}
 
 int main(void)
 {
@@ -233,8 +254,8 @@ int main(void)
 	wdt_enable(WDTO_250MS);
 	wdt_reset();
 
-	PORTB = _BV(SDA) | _BV(SCL) | _BV(OUTPUT_BLUE_PULLDOWN);  // All outputs low except SDA (pull-up enable), SCL, and OUTPUT_BLUE_PULLDOWN
-	DDRB |= _BV(SCL) | _BV(OUTPUT_WHITE_PULLDOWN) | _BV(OUTPUT_BLUE_PULLDOWN);
+	PORTB = _BV(SDA) | _BV(SCL) | _BV(JUMPER);  // All outputs low except SDA (pull-up enable), SCL, JUMPER (pull-up enable)
+	DDRB = _BV(SCL) | _BV(OUTPUT_WHITE_PULLDOWN) | _BV(OUTPUT_BLUE_PULLDOWN);
 
 	// Set up timer 0 for 100Hz interrupts
 	TCNT0 = 0;
@@ -340,19 +361,19 @@ int main(void)
 			if(!leftDetect && !rightDetect)
 			{
 				// Neither is detecting, so accumulate samples toward a detect
-				leftMotion = dy < LEFT_MOTION_THRESHOLD;
-				rightMotion = dy > RIGHT_MOTION_THRESHOLD;
+				leftMotion = dy < -getMotionThreshold();
+				rightMotion = dy > getMotionThreshold();
 			}
 			else if(leftDetect)
 			{
 				// Left is detecting, apply hysteresis
-				leftMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
+				leftMotion = (dy < -getNoMotionThreshold()) || (dy > getNoMotionThreshold());
 				rightMotion = 0;
 			}
 			else if(rightDetect)
 			{
 				// Right is detecting, apply hysteresis
-				rightMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
+				rightMotion = (dy < -getNoMotionThreshold()) || (dy > getNoMotionThreshold());
 				leftMotion = 0;
 			}
 			
