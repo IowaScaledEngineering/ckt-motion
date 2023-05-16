@@ -23,13 +23,13 @@ LICENSE:
 /* 
  * Directions:
  * 
- *     ---------  ^ NEGATIVE
+ *     ---------  ^ NEGATIVE (left)
  *     |   *   |  |
  *     |-------|  |
  *     ||     ||  dy
  *     ||     ||  |
  *     |-------|  |
- *     ---------  v POSITIVE
+ *     ---------  v POSITIVE (right)
  *     <-- dx -->
  *     NEG    POS
  */
@@ -45,6 +45,7 @@ LICENSE:
 #define PAT9125_ADDR           0x73
 #define INFO_ADDR              0x20
 
+// LOOP_MILLISECS should be a multiple of 10
 #define LOOP_MILLISECS         50
 
 #define ON_DEBOUNCE_COUNT      (SET_MILLISECS / LOOP_MILLISECS)
