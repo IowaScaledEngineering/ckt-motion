@@ -48,37 +48,32 @@ LICENSE:
 #define RIGHT_MOTION_THRESHOLD  MOTION_THRESHOLD
 #define LEFT_MOTION_THRESHOLD  -MOTION_THRESHOLD
 
-#define ON_DEBOUNCE_COUNT      SET_DECISECS
-#define OFF_DEBOUNCE_COUNT     RELEASE_DECISECS
+#define LOOP_MILLISECS         50
+
+#define ON_DEBOUNCE_COUNT      (SET_MILLISECS / LOOP_MILLISECS)
+#define OFF_DEBOUNCE_COUNT     (RELEASE_MILLISECS / LOOP_MILLISECS)
 
 #define SDA   PB0
 #define SCL   PB2
+
+#define OUTPUT_WHITE_PULLDOWN   PB3
+#define OUTPUT_BLUE_PULLDOWN    PB1
 
 static inline void sda_low() { DDRB |= _BV(SDA); PORTB &= ~_BV(SDA); _delay_us(3); }
 static inline void sda_high() { DDRB &= ~_BV(SDA); PORTB |= _BV(SDA); _delay_us(3); }
 static inline void scl_low() { PORTB &= ~_BV(SCL); _delay_us(3); }
 static inline void scl_high() { PORTB |= _BV(SCL); _delay_us(3); }
 
-volatile uint8_t decisecs = 0;
-
-void initialize100HzTimer(void)
-{
-	// Set up timer 0 for 100Hz interrupts
-	TCNT0 = 0;
-	OCR0A = 94;  // 9.6MHz / 1024 / 94 = 100Hz
-	decisecs = 0;
-	TCCR0A = _BV(WGM01);
-	TCCR0B = _BV(CS02) | _BV(CS00);  // 1024 prescaler
-	TIMSK0 |= _BV(OCIE0A);
-}
+volatile uint8_t trigger = 0;
 
 ISR(TIM0_COMPA_vect)
 {
 	static uint8_t ticks = 0;
-	if (++ticks >= 10)
+	// Called every 10ms
+	if (++ticks >= (LOOP_MILLISECS / 10))
 	{
 		ticks = 0;
-		decisecs++;
+		trigger = 1;
 	}
 }
 
@@ -188,32 +183,79 @@ uint8_t PAT9125_RegWriteRead(uint8_t reg, uint8_t data)
   return(PAT9125_RegRead(reg));
 }
 
-void init(void)
+void debounce(bool *detect, uint8_t* count, bool isDetecting, const uint8_t onDebounceCount, const uint8_t offDebounceCount)
 {
+	if(!(*detect) && isDetecting)
+	{
+		// ON debounce
+		(*count)++;
+		if(*count > onDebounceCount)
+		{
+			*detect = true;
+			*count = 0;
+		}
+	}
+	else if(!(*detect) && !isDetecting)
+	{
+		if (*count > 0)
+			count--;
+	}
+
+	else if(*detect & !isDetecting)
+	{
+		// OFF debounce
+		(*count)++;
+		if(*count > offDebounceCount)
+		{
+			*detect = false;
+			*count = 0;
+		}
+	}
+	else if(*detect & isDetecting)
+	{
+		if (*count > 0)
+			count--;
+	}
+}
+
+
+int main(void)
+{
+//	int16_t dx=0;
+	int16_t dy=0;
+
+	bool leftDetect = false, rightDetect = false;
+	uint8_t leftCount = 0, rightCount = 0;
+	
+	// Application initialization
 	MCUSR = 0;
 	wdt_reset();
 	wdt_enable(WDTO_250MS);
 	wdt_reset();
 
-	PORTB = _BV(SCL) | _BV(PB1);  // All outputs low except SCL and PB1
-	DDRB |= _BV(PB1) | _BV(SCL) | _BV(PB3);
-}
+	PORTB = _BV(SDA) | _BV(SCL) | _BV(OUTPUT_BLUE_PULLDOWN);  // All outputs low except SDA (pull-up enable), SCL, and OUTPUT_BLUE_PULLDOWN
+	DDRB |= _BV(SCL) | _BV(OUTPUT_WHITE_PULLDOWN) | _BV(OUTPUT_BLUE_PULLDOWN);
 
-bool PAT9125_test()
-{
+	// Set up timer 0 for 100Hz interrupts
+	TCNT0 = 0;
+	OCR0A = 94;  // 9.6MHz / 1024 / 94 = 100Hz = 10ms
+	trigger = 0;
+	TCCR0A = _BV(WGM01);
+	TCCR0B = _BV(CS02) | _BV(CS00);  // 1024 prescaler
+	TIMSK0 |= _BV(OCIE0A);
+
+	sei();
+
+	// BEGIN: PAT9125_init()
 	// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
-	if (0x31 == PAT9125_RegRead(0x00))
-		return true;
-	return false;
-}
-
-uint8_t PAT9125_init()
-{
-	uint8_t read_id_ok=0;
-
-	if(PAT9125_test())
+	if(0x31 != PAT9125_RegRead(0x00))
 	{
-		read_id_ok =1;
+		PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
+		PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
+		while(1); // Force WDT reset
+	}
+	else
+	{
 		//PAT9125 sensor recommended settings:
 		PAT9125_RegWrite(0x7F, 0x00);
 		// switch to bank0, not allowed to perform OTS_RegWriteRead
@@ -241,168 +283,104 @@ uint8_t PAT9125_init()
 
 		PAT9125_RegWriteRead(0x09, 0x00);// enable write protect
 	}
-
-	return read_id_ok;
-}
-
-bool PAT9125_ReadMotion(int16_t *dx, int16_t *dy)
-{
-	int16_t deltaX_l=0, deltaY_l=0, deltaXY_h=0;
-	int16_t deltaX_h=0, deltaY_h=0;
-
-	*dx = 0;
-	*dy = 0;
-
-	if (!PAT9125_test())
-		return false;
-
-	if( PAT9125_RegRead(0x02) & 0x80 ) //check motion bit in bit7
-	{
-		deltaX_l = PAT9125_RegRead(0x03);
-		deltaY_l = PAT9125_RegRead(0x04);
-		deltaXY_h = PAT9125_RegRead(0x12);
-
-		deltaX_h = (deltaXY_h << 4) & 0xF00;
-		if(deltaX_h & 0x800)
-			deltaX_h |= 0xf000;
-
-		deltaY_h = (deltaXY_h << 8) & 0xF00;
-		if(deltaY_h & 0x800)
-			deltaY_h |= 0xf000;
-	}
-
-	//inverse X and/or Y if necessary
-	*dx = -(deltaX_h | deltaX_l);
-	*dy = -(deltaY_h | deltaY_l);
-	return true;
-}
-
-void setOutputs(bool detect)
-{
-	if(detect)
-	{
-		PORTB |= _BV(PB3);
-		PORTB &= ~_BV(PB1);
-	}
-	else
-	{
-		PORTB &= ~_BV(PB3);
-		PORTB |= _BV(PB1);
-	}
-}
-
-void hysteresis(bool *detect, uint8_t* count, bool isDetecting, const uint8_t onDebounceCount, const uint8_t offDebounceCount)
-{
-	if(!(*detect) && isDetecting)
-	{
-		// ON debounce
-		(*count)++;
-		if(*count > onDebounceCount)
-		{
-			*detect = true;
-			*count = 0;
-		}
-	}
-	else if(!(*detect) && !isDetecting)
-	{
-		if (*count > 0)
-			count--;
-//		*count = 0;
-	}
-
-	else if(*detect & !isDetecting)
-	{
-		// OFF debounce
-		(*count)++;
-		if(*count > offDebounceCount)
-		{
-			*detect = false;
-			*count = 0;
-		}
-	}
-	else if(*detect & isDetecting)
-	{
-		if (*count > 0)
-			count--;
-
-//		*count = 0;
-	}
-}
-
-
-int main(void)
-{
-	int16_t dx=0, dy=0;
-
-	bool leftDetect = false, rightDetect = false;
-	uint8_t leftCount = 0, rightCount = 0;
-
-	// Application initialization
-	init();
-	initialize100HzTimer();
-	sei();
-
-	PAT9125_init();
+	// END: PAT9125_init()
 
 	while (1)
 	{
 		wdt_reset();
 
-		if(decisecs >= 1)
+		if(trigger)
 		{
-			decisecs = 0;
+			trigger = 0;
 
-			if (!PAT9125_ReadMotion(&dx, &dy))
+			// BEGIN: PAT9125_ReadMotion()
+//			int16_t deltaX_l=0;
+			int16_t deltaY_l=0;
+			int16_t deltaXY_h=0;
+//			int16_t deltaX_h=0;
+			int16_t deltaY_h=0;
+
+//			dx = 0;
+			dy = 0;
+
+			// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
+			if (0x31 != PAT9125_RegRead(0x00))
 			{
-				leftDetect = rightDetect = false;
-				leftCount = rightCount = 0;
-				setOutputs(false);
-				PAT9125_init();
-				continue;
+				PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
+				PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
+				while(1); // Force WDT reset
 			}
+
+			if( PAT9125_RegRead(0x02) & 0x80 ) //check motion bit in bit7
+			{
+//				deltaX_l = PAT9125_RegRead(0x03);
+				deltaY_l = PAT9125_RegRead(0x04);
+				deltaXY_h = PAT9125_RegRead(0x12);
+
+//				deltaX_h = (deltaXY_h << 4) & 0xF00;
+//				if(deltaX_h & 0x800)
+//					deltaX_h |= 0xf000;
+
+				deltaY_h = (deltaXY_h << 8) & 0xF00;
+				if(deltaY_h & 0x800)
+					deltaY_h |= 0xf000;
+			}
+
+			//inverse X and/or Y if necessary
+//			dx = -(deltaX_h | deltaX_l);
+			dy = -(deltaY_h | deltaY_l);
+			// END: PAT9125_ReadMotion()
 
 			uint8_t leftMotion = 0;
 			uint8_t rightMotion = 0;
 			
-			if(!leftDetect)
+			// Motion is detected when either leftMotion or rightMotion exceeds the debounce count
+			// Once direction is detected, it stays until the abs value of the motion falls within the NO_MOTION_THRESHOLD band
+			// Direction can only change once no motion is detected - quick changes in direction will be sensed as the original direction
+			if(!leftDetect && !rightDetect)
+			{
+				// Neither is detecting, so accumulate samples toward a detect
 				leftMotion = dy < LEFT_MOTION_THRESHOLD;
-			else
-				leftMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
-			
-			if(!rightDetect)
 				rightMotion = dy > RIGHT_MOTION_THRESHOLD;
-			else
+			}
+			else if(leftDetect)
+			{
+				// Left is detecting, apply hysteresis
+				leftMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
+				rightMotion = 0;
+			}
+			else if(rightDetect)
+			{
+				// Right is detecting, apply hysteresis
 				rightMotion = (dy < -NO_MOTION_THRESHOLD) || (dy > NO_MOTION_THRESHOLD);
-
-			hysteresis(&leftDetect, &leftCount, leftMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
-			hysteresis(&rightDetect, &rightCount, rightMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
-
-#if defined MODE_LEFT_MOTION_ONLY
-			if (leftDetect)
-				setOutputs(true);
-			else
-				setOutputs(false);
-#elif defined MODE_RIGHT_MOTION_ONLY
-			if (rightDetect)
-				setOutputs(true);
-			else
-				setOutputs(false);
-#elif defined MODE_DIRECTION_MOTION
-			if (rightDetect)
-				PORTB |= _BV(PB3);
-			else
-				PORTB &= ~_BV(PB3);
+				leftMotion = 0;
+			}
+			
+			debounce(&leftDetect, &leftCount, leftMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
+			debounce(&rightDetect, &rightCount, rightMotion, ON_DEBOUNCE_COUNT, OFF_DEBOUNCE_COUNT);
 
 			if (leftDetect)
-				PORTB |= _BV(PB1);
+				PORTB |= _BV(OUTPUT_WHITE_PULLDOWN);
 			else
-				PORTB &= ~_BV(PB1);
-#else
+				PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
+
+			if (rightDetect)
+				PORTB |= _BV(OUTPUT_BLUE_PULLDOWN);
+			else
+				PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
+
+/*
 			if (rightDetect || leftDetect)
-				setOutputs(true);
+			{
+				PORTB |= _BV(OUTPUT_WHITE_PULLDOWN);
+				PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
+			}
 			else
-				setOutputs(false);
-#endif
+			{
+				PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
+				PORTB |= _BV(OUTPUT_BLUE_PULLDOWN);
+			}
+*/
 
 		}
 	}
