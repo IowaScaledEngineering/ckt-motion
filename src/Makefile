@@ -44,7 +44,7 @@ NO_MOTION_THRESHOLD_B = 30
 SRCS = $(BASE_NAME).c
 INCS = 
 
-AVRDUDE = avrdude -c iseavrprog -P usb -p $(DEVICE) -B8
+AVRDUDE = avrdude -c iseavrprog -P usb -p $(DEVICE) -B4
 AVRDUDE_SLOW = avrdude -c iseavrprog -P usb -p $(DEVICE) -B32
 
 OBJS = ${SRCS:.c=.o}
@@ -60,10 +60,9 @@ COMPILE = avr-gcc $(DEFINES) -DF_CPU=$(F_CPU) $(OPTS) $(SENSOR) $(BOARD) -DSET_M
 help:
 	@echo "make hex ....... build $(BASE_NAME).hex"
 	@echo "make flash ..... flash the firmware"
-	@echo "make prod ...... flash the production firmware"
-	@echo "make prodlong .. flash the production firmware (long delay)"
 	@echo "make fuse ...... flash the fuses"
 	@echo "make program ... flash fuses and firmware"
+	@echo "make firmware .. flash firmware from file"
 	@echo "make read ...... read the fuses"
 	@echo "make size ...... memory usage"
 	@echo "make clean ..... delete objects and hex file"
@@ -93,11 +92,8 @@ size:
 flash: $(BASE_NAME).hex
 	$(AVRDUDE) -U flash:w:$(BASE_NAME).hex:i
 
-prod:
-	$(AVRDUDE) -U flash:w:hex/$(BASE_NAME).hex:i
-
-prodlong:
-	$(AVRDUDE) -U flash:w:hex/$(BASE_NAME)-long.hex:i
+firmware:
+	$(AVRDUDE) -U flash:w:$(HEX):i
 
 # rule for deleting dependent files (those which can be built by Make):
 clean:
