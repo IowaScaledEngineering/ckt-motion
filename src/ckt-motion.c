@@ -58,6 +58,27 @@ LICENSE:
 #define OUTPUT_BLUE_PULLDOWN    PB1
 #define JUMPER                  PB4
 
+#define PAT9125_PID1            0x00
+#define PAT9125_PID2            0x01
+#define PAT9125_MOTION          0x02
+#define PAT9125_DELTA_XL        0x03
+#define PAT9125_DELTA_YL        0x04
+#define PAT9125_MODE            0x05
+#define PAT9125_CONFIG          0x06
+#define PAT9125_WP              0x09
+#define PAT9125_SLEEP1          0x0a
+#define PAT9125_SLEEP2          0x0b
+#define PAT9125_RES_X           0x0d
+#define PAT9125_RES_Y           0x0e
+#define PAT9125_DELTA_XYH       0x12
+#define PAT9125_SHUTTER         0x14
+#define PAT9125_FRAME           0x17
+#define PAT9125_ORIENTATION     0x19
+#define PAT9125_BANK_SELECTION  0x7f
+#define PAT9125_MYSTERY         0x4B
+#define PAT9125_MAGIC_JUJU_1    0x5D
+#define PAT9125_MAGIC_JUJU_2    0x5E
+
 static inline void sda_low() { DDRB |= _BV(SDA); PORTB &= ~_BV(SDA); _delay_us(3); }
 static inline void sda_high() { DDRB &= ~_BV(SDA); PORTB |= _BV(SDA); _delay_us(3); }
 static inline void scl_low() { PORTB &= ~_BV(SCL); _delay_us(3); }
@@ -270,7 +291,7 @@ int main(void)
 
 	// BEGIN: PAT9125_init()
 	// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
-	if(0x31 != PAT9125_RegRead(0x00))
+	if(0x31 != PAT9125_RegRead(PAT9125_PID1))
 	{
 		PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
 		PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
@@ -279,31 +300,31 @@ int main(void)
 	else
 	{
 		//PAT9125 sensor recommended settings:
-		PAT9125_RegWrite(0x7F, 0x00);
+		PAT9125_RegWrite(PAT9125_BANK_SELECTION, 0x00);
 		// switch to bank0, not allowed to perform OTS_RegWriteRead
-		PAT9125_RegWrite(0x06, 0x97);
+		PAT9125_RegWrite(PAT9125_CONFIG, 0x97);
 		// software reset (i.e. set bit7 to 1). OTS_RegWriteRead is not allowed
 		// because this bit will clear to 0 automatically.
 
 		_delay_ms(1);
 		// delay 1ms
 
-		PAT9125_RegWrite(0x06, 0x17);
+		PAT9125_RegWrite(PAT9125_CONFIG, 0x17);
 		// ensure the sensor has left the reset state.
-		PAT9125_RegWriteRead(0x09, 0x5A);// disable write protect
-		PAT9125_RegWriteRead(0x0D, 0x65);// set X-axis resolution (depends on application)
-		PAT9125_RegWriteRead(0x0E, 0xFF);// set Y-axis resolution (depends on application)
-		PAT9125_RegWriteRead(0x19, 0x04);// set 12-bit X/Y data format (depends on application)
-		PAT9125_RegWriteRead(0x4B, 0x04);// ONLY for VDD=VDDA=1.7~1.9V: for power saving
+		PAT9125_RegWriteRead(PAT9125_WP, 0x5A);// disable write protect
+		PAT9125_RegWriteRead(PAT9125_RES_X, 0x65);// set X-axis resolution (depends on application)
+		PAT9125_RegWriteRead(PAT9125_RES_Y, 0xFF);// set Y-axis resolution (depends on application)
+		PAT9125_RegWriteRead(PAT9125_ORIENTATION, 0x04);// set 12-bit X/Y data format (depends on application)
+		PAT9125_RegWriteRead(PAT9125_MYSTERY, 0x04);// ONLY for VDD=VDDA=1.7~1.9V: for power saving
 
-		if(PAT9125_RegRead(0x5E) == 0x04)
+		if(PAT9125_RegRead(PAT9125_MAGIC_JUJU_2) == 0x04)
 		{
-			PAT9125_RegWriteRead(0x5E, 0x08);
-			if(PAT9125_RegRead(0x5D) == 0x10)
-				PAT9125_RegWriteRead(0x5D, 0x19);
+			PAT9125_RegWriteRead(PAT9125_MAGIC_JUJU_2, 0x08);
+			if(PAT9125_RegRead(PAT9125_MAGIC_JUJU_1) == 0x10)
+				PAT9125_RegWriteRead(PAT9125_MAGIC_JUJU_1, 0x19);
 		}
 
-		PAT9125_RegWriteRead(0x09, 0x00);// enable write protect
+		PAT9125_RegWriteRead(PAT9125_WP, 0x00);// enable write protect
 	}
 	// END: PAT9125_init()
 
@@ -326,18 +347,18 @@ int main(void)
 			dy = 0;
 
 			// Read sensor_pid in address 0x00 to check if the serial link is valid, read value should be 0x31.
-			if (0x31 != PAT9125_RegRead(0x00))
+			if (0x31 != PAT9125_RegRead(PAT9125_PID1))
 			{
 				PORTB &= ~_BV(OUTPUT_WHITE_PULLDOWN);
 				PORTB &= ~_BV(OUTPUT_BLUE_PULLDOWN);
 				while(1); // Force WDT reset
 			}
 
-			if( PAT9125_RegRead(0x02) & 0x80 ) //check motion bit in bit7
+			if( PAT9125_RegRead(PAT9125_MOTION) & 0x80 ) //check motion bit in bit7
 			{
-//				deltaX_l = PAT9125_RegRead(0x03);
-				deltaY_l = PAT9125_RegRead(0x04);
-				deltaXY_h = PAT9125_RegRead(0x12);
+//				deltaX_l = PAT9125_RegRead(PAT9125_DELTA_XL);
+				deltaY_l = PAT9125_RegRead(PAT9125_DELTA_YL);
+				deltaXY_h = PAT9125_RegRead(PAT9125_DELTA_XYH);
 
 //				deltaX_h = (deltaXY_h << 4) & 0xF00;
 //				if(deltaX_h & 0x800)
